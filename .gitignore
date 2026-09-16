@@ -32,3 +32,7 @@ UPCOMING_CHANGELOG.md
 logs/
 *.bun-build
 tsconfig.tsbuildinfo
+
+# Isolated Rivloom build tools and dependency cache
+/rivloom/.tools/
+/rivloom/.cache/

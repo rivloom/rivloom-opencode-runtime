@@ -1,0 +1,57 @@
+name: Rivloom runtime Windows
+
+on:
+  push:
+    branches: [codex/runtime-v1, "rivloom/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rivloom-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    if: github.repository == 'rivloom/rivloom-opencode-runtime'
+    runs-on: windows-2025
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.19.0"
+      - name: Build and verify isolated runtime
+        shell: pwsh
+        run: ./rivloom/build.ps1 -RequireClean
+      - name: Check types and upstream configuration regression tests
+        shell: pwsh
+        run: |
+          $env:PATH = "$PWD/rivloom/.tools/bun-1.3.14/bun-windows-x64-baseline;$env:PATH"
+          $env:OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER = 'true'
+          bun run --cwd packages/core typecheck
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          bun run --cwd packages/opencode typecheck
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Set-Location packages/opencode
+          bun test --timeout 30000 --only-failures test/config/config.test.ts test/config/tui.test.ts test/config/plugin.test.ts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload verified candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rivloom-opencode-windows-x64-${{ github.sha }}
+          path: rivloom/dist/windows-x64/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: runtime-failure-${{ github.sha }}
+          path: rivloom/dist/verification/
+          if-no-files-found: ignore
+          retention-days: 7

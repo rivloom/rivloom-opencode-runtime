@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "upstream": {
+    "repository": "anomalyco/opencode",
+    "tag": "v1.18.31",
+    "commit": "014614d35b397775e5d397a490fc72368c894ec2",
+    "version": "1.18.31"
+  },
+  "nodeVersion": "24.19.0",
+  "bun": {
+    "version": "1.3.14",
+    "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-windows-x64-baseline.zip",
+    "sha256": "538f9c846355d9e847b2671bc00c47da4229a0befb24df3282b739770f3b475f"
+  },
+  "models": {
+    "file": "rivloom/models.json",
+    "source": "https://models.dev/api.json",
+    "retrievedOn": "2026-09-16",
+    "sha256": "22733fa7b4faff49d6658dd1a1c575c78d2e16730bb3f68101c800422d4991f0"
+  },
+  "target": "windows-x64",
+  "channel": "rivloom",
+  "embedWebUI": false
+}
