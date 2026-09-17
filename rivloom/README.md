@@ -43,6 +43,12 @@ installation uses the source package's published version (currently 1.18.31).
 Both HTTP configuration and TUI configuration use this value. No model, session
 or tool execution behavior is patched.
 
+## Rivloom prompt scaffold
+
+The [prompt scaffold](../packages/opencode/src/rivloom/prompts/README.md) reserves
+an empty base prompt and a module for future loading and selection. It is not
+connected to runtime requests and does not change model behavior.
+
 ## CI
 
 `Rivloom runtime Windows` builds on pushes to `codex/runtime-v1` and `rivloom/**`,
