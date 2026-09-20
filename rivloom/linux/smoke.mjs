@@ -6,23 +6,38 @@ import { createServer } from "node:http"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { setTimeout as delay } from "node:timers/promises"
-import { installedPackageVersion, safeDirectory, sha256, verifyArtifact, writeChecksums } from "./artifact.mjs"
+import { installedPackageVersion, isolatedSmokeEnvironment, json, recipeInventory, safeDirectory, sha256, sourceInventory, verifyArtifact, verifyLinuxBinary, writeChecksums } from "./artifact.mjs"
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
-const artifactFlag = process.argv.indexOf("--artifact")
-if (artifactFlag !== -1) assert.ok(process.argv[artifactFlag + 1], "--artifact requires a directory")
-const out = safeDirectory(path.join(root, "rivloom/dist"), artifactFlag === -1
-  ? path.join(root, "rivloom/dist/windows-x64") : path.resolve(root, process.argv[artifactFlag + 1]))
-const exe = path.join(out, "opencode.exe")
+const recipeRoot = path.dirname(fileURLToPath(import.meta.url))
+const args = new Map()
+for (let index = 2; index < process.argv.length; index += 2) {
+  assert.ok(["--source", "--artifact"].includes(process.argv[index]) && !args.has(process.argv[index]) && process.argv[index + 1] && !process.argv[index + 1].startsWith("--"), "Use --source <clean checkout> --artifact <Linux candidate>")
+  args.set(process.argv[index], process.argv[index + 1])
+}
+assert.ok(args.has("--source") && args.has("--artifact"), "An explicit source and artifact are required")
+assert.equal(process.platform, "linux", "Linux verification requires native Linux")
+assert.equal(process.arch, "x64")
+const root = path.resolve(args.get("--source"))
+const out = path.resolve(args.get("--artifact"))
+safeDirectory(path.dirname(out), out)
+const exe = path.join(out, "opencode")
 const manifest = JSON.parse(readFileSync(path.join(out, "runtime-manifest.json"), "utf8"))
 verifyArtifact(out, manifest)
+const recipe = recipeInventory(recipeRoot)
+assert.deepEqual(manifest.recipe, recipe, "Use the candidate's exact reviewed recipe")
+const recipeConfig = JSON.parse(readFileSync(path.join(recipeRoot, "runtime.json"), "utf8"))
+assert.equal(process.versions.node, recipeConfig.nodeVersion)
+assert.equal(manifest.source.commit, recipeConfig.source.commit)
+assert.equal(manifest.source.tree, recipeConfig.source.tree)
+assert.deepEqual(manifest.inputs.files, recipeConfig.inputs)
+const source = sourceInventory(root, true)
+assert.equal(createHash("sha256").update(json(source)).digest("hex"), manifest.source.inventory.sha256, "Smoke source differs from compiled source")
 const manifestSHA256 = sha256(path.join(out, "runtime-manifest.json"))
-for (const file of ["rivloom/smoke.mjs", "rivloom/artifact.mjs"]) assert.equal(sha256(path.join(root, file)), manifest.inputs.files[file], "Use the candidate's matching verification harness")
 assert.equal(sha256(path.join(root, "rivloom/models.json")), manifest.inputs.modelsSHA256)
 const diagnostics = path.join(root, "rivloom/dist/verification")
 safeDirectory(path.join(root, "rivloom/dist"), path.join(diagnostics, "smoke-"))
 mkdirSync(diagnostics, { recursive: true })
-const temp = mkdtempSync(path.join(diagnostics, "smoke-"))
+const temp = mkdtempSync(path.join(diagnostics, "linux-smoke-"))
 const project = path.join(temp, "project")
 const home = path.join(temp, "home")
 for (const dir of [project, home, "tmp", "data", "cache", "config", "state", "managed"].map((dir) =>
@@ -38,6 +53,7 @@ const report = {
   sourceInventorySHA256: manifest.source.inventory.sha256,
   licenseSHA256: manifest.artifacts.find((file) => file.file === "LICENSE").sha256,
   harnessSHA256: sha256(fileURLToPath(import.meta.url)),
+  recipeSHA256: recipe.sha256,
   startedAt: new Date().toISOString(),
   passed: false,
   checks: [],
@@ -143,13 +159,7 @@ const config = {
     },
   },
 }
-const env = Object.fromEntries(
-  Object.entries(process.env).filter(([key]) =>
-    ["systemroot", "windir", "comspec", "path", "pathext", "processor_architecture", "number_of_processors"].includes(
-      key.toLowerCase(),
-    ),
-  ),
-)
+const env = isolatedSmokeEnvironment(process.env)
 Object.assign(env, {
   HOME: home,
   USERPROFILE: home,
@@ -220,6 +230,7 @@ async function start() {
     cwd: project,
     env,
     windowsHide: true,
+    detached: true,
     stdio: ["ignore", "pipe", "pipe"],
   })
   child.on("error", appendLog)
@@ -250,10 +261,12 @@ async function stop() {
   if (!child || child.exitCode !== null) return
   const current = child
   const ended = new Promise((resolve) => current.once("exit", resolve))
-  if (process.platform === "win32") {
-    execFileSync("taskkill", ["/PID", String(current.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" })
-  } else current.kill("SIGTERM")
-  await ended
+  // This detached process group belongs to this test, including any npm children.
+  process.kill(-current.pid, "SIGTERM")
+  if (!(await Promise.race([ended.then(() => true), delay(10000).then(() => false)]))) {
+    process.kill(-current.pid, "SIGKILL")
+    await ended
+  }
   child = undefined
 }
 async function streamEvents() {
@@ -302,13 +315,10 @@ async function completed(sessionID) {
 }
 const sessionIDs = []
 try {
-  await check("Windows x64 executable identity and SHA256", () => {
+  await check("Linux x64 baseline executable identity and SHA256", () => {
     const bytes = readFileSync(exe)
     assert.equal(createHash("sha256").update(bytes).digest("hex"), manifest.binary.sha256)
-    assert.equal(bytes.toString("ascii", 0, 2), "MZ")
-    const pe = bytes.readUInt32LE(0x3c)
-    assert.equal(bytes.toString("ascii", pe, pe + 4), "PE\0\0")
-    assert.equal(bytes.readUInt16LE(pe + 4), 0x8664)
+    verifyLinuxBinary(exe)
     assert.equal(
       execFileSync(exe, ["--version"], {
         cwd: project,
@@ -405,6 +415,8 @@ try {
   await check("Manifest, source inventory and license remain bound to the tested executable", () => {
     assert.equal(sha256(path.join(out, "runtime-manifest.json")), manifestSHA256)
     verifyArtifact(out, manifest)
+    assert.deepEqual(recipeInventory(recipeRoot), recipe, "Recipe changed during smoke verification")
+    assert.deepEqual(sourceInventory(root, true), source, "Core source changed during smoke verification")
   })
   report.passed = true
 } catch (error) {
@@ -426,8 +438,10 @@ try {
   report.eventTypes = [...new Set(events.map((event) => event.type))].sort()
   writeFileSync(path.join(temp, "engine.log"), log)
   writeFileSync(path.join(temp, "smoke-report.json"), JSON.stringify(report, null, 2) + "\n")
-  writeFileSync(path.join(out, "smoke-report.json"), JSON.stringify(report, null, 2) + "\n")
-  writeChecksums(out)
+  if (report.passed && !existsSync(path.join(out, "smoke-report.json"))) {
+    writeFileSync(path.join(out, "smoke-report.json"), JSON.stringify(report, null, 2) + "\n", { flag: "wx" })
+    writeChecksums(out)
+  }
   console.log(`Verification evidence: ${temp}`)
   console.log(`Runtime verification ${report.passed ? "PASSED" : "FAILED"}: ${report.checks.length} checks`)
 }

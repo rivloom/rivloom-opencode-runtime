@@ -1,15 +1,16 @@
 import assert from "node:assert/strict"
-import { createHash } from "node:crypto"
+import { randomUUID } from "node:crypto"
 import { execFileSync, spawnSync } from "node:child_process"
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { sourceGit, json, publishDirectory, safeDirectory, sha256, sourceInventory, writeChecksums } from "./artifact.mjs"
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 process.chdir(root)
 const config = JSON.parse(readFileSync("rivloom/runtime.json", "utf8"))
-const git = (...args) => execFileSync("git", args, { encoding: "utf8", windowsHide: true }).trim()
-const hash = (file) => createHash("sha256").update(readFileSync(file)).digest("hex")
+const git = (...args) => sourceGit(root, ...args).trim()
+const hash = sha256
 assert.equal(process.platform, "win32")
 assert.equal(process.arch, "x64")
 assert.equal(process.versions.node, config.nodeVersion)
@@ -17,10 +18,16 @@ const bun = execFileSync("bun", ["--version"], { encoding: "utf8", windowsHide: 
 assert.equal(bun, config.bun.version)
 assert.equal(hash(config.models.file), config.models.sha256, "models snapshot changed; review and update runtime.json")
 git("merge-base", "--is-ancestor", config.upstream.commit, "HEAD")
-const commit = git("rev-parse", "HEAD")
-const status = git("status", "--porcelain=v1", "--untracked-files=all")
-const dirty = status.length > 0
-if (process.argv.includes("--require-clean")) assert.equal(dirty, false, `Uncommitted inputs:\n${status}`)
+const source = sourceInventory(root, process.argv.includes("--require-clean"))
+const commit = source.commit
+const dirty = source.dirty
+const dist = path.join(root, "rivloom/dist")
+const outputFlag = process.argv.indexOf("--out")
+if (outputFlag !== -1) assert.ok(process.argv[outputFlag + 1], "--out requires a directory")
+const out = safeDirectory(dist, path.resolve(outputFlag === -1 ? "rivloom/dist/windows-x64" : process.argv[outputFlag + 1]))
+assert.equal(path.dirname(out), dist, "Build output must be a direct child of rivloom/dist")
+assert.ok(/^[a-z0-9][a-z0-9.-]*$/i.test(path.basename(out)) && !["archive", "verification"].includes(path.basename(out).toLowerCase()), "Reserved artifact output directory")
+safeDirectory(path.join(root, "packages/opencode"), path.join(root, "packages/opencode/dist"))
 const packageVersions = Object.fromEntries(
   [
     ["opencode", "packages/opencode/package.json"],
@@ -52,15 +59,17 @@ const result = spawnSync(
 if (result.error) throw result.error
 assert.equal(result.status, 0, "Bun build failed")
 assert.equal(hash("bun.lock"), lockHash, "Build modified the frozen dependency lock")
-const out = path.resolve("rivloom/dist/windows-x64")
-mkdirSync(out, { recursive: true })
-const exe = path.join(out, "opencode.exe")
+assert.deepEqual(sourceInventory(root), source, "Source inputs changed while compiling; do not publish this candidate")
+const stage = safeDirectory(dist, path.join(dist, `.stage-${randomUUID()}`))
+mkdirSync(stage, { recursive: true })
+const exe = path.join(stage, "opencode.exe")
 copyFileSync("packages/opencode/dist/opencode-windows-x64/bin/opencode.exe", exe)
-copyFileSync("LICENSE", path.join(out, "LICENSE"))
-copyFileSync("rivloom/README.md", path.join(out, "README.md"))
+copyFileSync("LICENSE", path.join(stage, "LICENSE"))
+copyFileSync("rivloom/README.md", path.join(stage, "README.md"))
+writeFileSync(path.join(stage, "source-files.json"), json(source))
 assert.equal(execFileSync(exe, ["--version"], { encoding: "utf8", windowsHide: true }).trim(), version)
 const manifest = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   version,
   channel: config.channel,
   target: config.target,
@@ -68,16 +77,26 @@ const manifest = {
   source: {
     repository: "https://github.com/rivloom/rivloom-opencode-runtime",
     commit,
-    tree: git("rev-parse", "HEAD^{tree}"),
+    tree: source.tree,
     dirty,
+    inventory: { file: "source-files.json", sha256: hash(path.join(stage, "source-files.json")), files: source.files.length },
   },
   upstream: config.upstream,
   packageVersions,
-  toolchain: { node: process.versions.node, bun, bunArchiveSHA256: config.bun.sha256 },
-  inputs: { bunLockSHA256: lockHash, modelsSHA256: config.models.sha256 },
+  toolchain: { node: process.versions.node, bun, bunArchiveSHA256: config.bun.sha256,
+    bunExecutableSHA256: hash(commandExecutable("bun")), nodeExecutableSHA256: hash(process.execPath) },
+  inputs: { bunLockSHA256: lockHash, modelsSHA256: config.models.sha256,
+    files: Object.fromEntries(["rivloom/runtime.json", "rivloom/build.ps1", "rivloom/build.mjs", "rivloom/artifact.mjs", "rivloom/smoke.mjs", "packages/opencode/script/build.ts"]
+      .map((file) => [file, hash(file)])) },
   profile: { embedWebUI: false, signed: false, desktopIntegrated: false },
   binary: { file: "opencode.exe", bytes: readFileSync(exe).length, sha256: hash(exe) },
+  artifacts: ["LICENSE", "README.md", "source-files.json"].map((file) => ({ file, bytes: readFileSync(path.join(stage, file)).length, sha256: hash(path.join(stage, file)) })),
 }
-writeFileSync(path.join(out, "runtime-manifest.json"), JSON.stringify(manifest, null, 2) + "\n")
-writeFileSync(path.join(out, "SHA256SUMS"), `${manifest.binary.sha256}  opencode.exe\n`)
+writeFileSync(path.join(stage, "runtime-manifest.json"), json(manifest))
+writeChecksums(stage)
+publishDirectory(dist, stage, out)
 console.log(JSON.stringify(manifest, null, 2))
+
+function commandExecutable(name) {
+  return execFileSync("where.exe", [name], { encoding: "utf8", windowsHide: true }).trim().split(/\r?\n/)[0]
+}

@@ -1,0 +1,64 @@
+name: Rivloom runtime Linux x64
+
+on:
+  push:
+    branches: [dev, codex/runtime-v1, "rivloom/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rivloom-runtime-linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    if: github.repository == 'rivloom/rivloom-opencode-runtime'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.19.0"
+      - name: Check producer integrity and workflow isolation
+        working-directory: rivloom
+        run: node --test linux.test.mjs artifact.test.mjs tests/check-upstream.test.mjs tests/workflow-policy.test.mjs
+      - name: Check out the separately pinned clean runtime core
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: rivloom/rivloom-opencode-runtime
+          ref: 9b07cf442a7eba60a6fe690f630251d23d24194a
+          fetch-depth: 0
+          persist-credentials: false
+          path: rivloom/dist/linux-core
+      - name: Build and run native Linux x64 baseline smoke
+        run: |
+          command -v python3 make cc c++
+          node rivloom/linux/build.mjs --source rivloom/dist/linux-core --output rivloom/dist/linux-x64 --require-clean
+      - name: Archive verified candidate with executable permissions
+        run: |
+          tar -czf "rivloom/dist/rivloom-opencode-linux-x64-${GITHUB_SHA}.tar.gz" -C rivloom/dist/linux-x64 .
+          cd rivloom/dist
+          sha256sum "rivloom-opencode-linux-x64-${GITHUB_SHA}.tar.gz" > "rivloom-opencode-linux-x64-${GITHUB_SHA}.tar.gz.sha256"
+      - name: Upload verified Linux candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rivloom-opencode-linux-x64-${{ github.sha }}
+          path: |
+            rivloom/dist/rivloom-opencode-linux-x64-*.tar.gz
+            rivloom/dist/rivloom-opencode-linux-x64-*.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload Linux failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: runtime-linux-failure-${{ github.sha }}
+          path: rivloom/dist/linux-core/rivloom/dist/verification/
+          if-no-files-found: ignore
+          retention-days: 7

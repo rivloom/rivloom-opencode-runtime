@@ -1,15 +1,20 @@
-# Rivloom OpenCode runtime (Windows)
+# Rivloom OpenCode runtime
 
 This fork's Windows build profile starts at upstream **v1.18.31**, commit
-`014614d35b397775e5d397a490fc72368c894ec2`. Rivloom's desktop currently uses the
-official **1.18.25** executable. Building this repository does not replace it.
+`014614d35b397775e5d397a490fc72368c894ec2`. Rivloom desktop's local Windows
+integration uses a source build of this fork in place of the official **1.18.25**
+executable, pinned to committed source
+`9b07cf442a7eba60a6fe690f630251d23d24194a`. Building this repository does not
+install or release the desktop application. See [desktop integration](#desktop-integration)
+for the distinction between that pinned candidate and the newer build tools.
 
-## Build and verify
+## Windows build and verification
 
-On Windows x64, install Git and Node.js **24.19.0**, then run from this repository:
+On Windows x64, install Git, Node.js **24.19.0**, and **PowerShell 7** (`pwsh`
+on PATH), then run from this repository:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\rivloom\build.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\rivloom\build.ps1
 ```
 
 The script downloads a SHA256-checked Bun **1.3.14** into `rivloom/.tools`, installs
@@ -20,11 +25,23 @@ Use `-RequireClean` for a traceable committed candidate, or `-SkipSmoke` only wh
 you intentionally want an unverified development build.
 
 Output: `rivloom/dist/windows-x64/opencode.exe`, `runtime-manifest.json`,
-`SHA256SUMS`, `smoke-report.json`, and the upstream license. Re-run verification:
+`source-files.json`, `SHA256SUMS`, `smoke-report.json`, this README, and the
+upstream license. The source inventory and artifact hashes in the schema 2
+manifest bind the build to its inputs; the smoke report also binds to the
+manifest. This profile writes schema 2; the older pinned `9b07cf4` Windows
+profile writes schema 1 and has no source inventory.
+Re-run verification:
 
 ```powershell
 node .\rivloom\smoke.mjs
 ```
+
+Use `-OutputDirectory rivloom/dist/<candidate>` to isolate a development build;
+verify it with `node rivloom/smoke.mjs --artifact rivloom/dist/<candidate>`.
+The output directory must remain inside `rivloom/dist`. Existing output is
+preserved before rebuilding, stale smoke success is invalidated, source inputs
+must remain unchanged during compilation, and cached Bun archives/executables
+are reverified before use.
 
 Version strings include the source commit: `1.18.31-rivloom.<commit>`. Uncommitted
 builds have an additional `.dirty` suffix. Generated binaries are unsigned.
@@ -43,6 +60,77 @@ installation uses the source package's published version (currently 1.18.31).
 Both HTTP configuration and TUI configuration use this value. No model, session
 or tool execution behavior is patched.
 
+## Linux x64 build and verification
+
+The Linux client uses this fork too. Its profile is **Linux x86-64 baseline,
+glibc**, with no embedded web UI. ARM64 and musl are not candidates in this
+profile. Linux support is implemented by the four self-contained files in
+[`linux/`](linux/), independently from the existing Windows recipe.
+
+The current Linux runtime requires **glibc 2.30 or newer**. The main ELF's
+highest required symbol is `GLIBC_2.17`, but its embedded
+`@ff-labs/fff-bin-linux-x64-gnu/libfff_c.so`, which the smoke run actually
+extracts, requires `GLIBC_2.30`. The embedded watcher also requires symbols
+through `GLIBCXX_3.4.22`. Inspecting only `opencode` with `readelf` therefore
+understates the runtime requirements. The complete Linux client adds its own
+bundled Node requirements: `GLIBCXX_3.4.25` and Linux kernel 4.18 or newer.
+
+The external recipe deliberately compiles a separate clean checkout of the
+same fixed `9b07cf442a7eba60a6fe690f630251d23d24194a` core source. The recipe
+does not need to exist in that old commit. The schema 2 manifest records the
+core source inventory and the separate recipe file hashes; it never claims
+that newer build scripts were part of the pinned core commit.
+
+On native Linux x64/glibc, install Git, Node.js **24.19.0**, Python 3, `make`,
+and a C/C++ compiler toolchain (including libc development headers), then:
+
+```sh
+git clone --no-checkout https://github.com/rivloom/rivloom-opencode-runtime.git /path/to/clean-core
+git -C /path/to/clean-core checkout --detach 9b07cf442a7eba60a6fe690f630251d23d24194a
+node rivloom/linux/build.mjs --source /path/to/clean-core --output /path/to/candidate/linux-x64 --require-clean
+```
+
+The recipe always requires a clean core tree and verifies its commit, tree,
+lockfile, public model catalog, license and reviewed build inputs. It downloads
+the SHA256-pinned Bun **1.3.14** Linux baseline archive, verifies the cached
+executable against that archive on every run, and uses Python's standard
+library to extract exactly the expected binary. It installs frozen dependencies,
+including native grammar dependencies that may invoke `node-gyp`,
+compiles upstream's native normal/baseline targets, and selects only the baseline
+ELF executable. `--skip-install` is available for unchanged dependencies.
+
+Output contains `opencode` (executable), `runtime-manifest.json`, `source-files.json`,
+`smoke-report.json`, `LICENSE`, the pinned core's `README.md`, and `SHA256SUMS`.
+Eleven isolated real-binary checks must pass before the new candidate replaces
+the requested output. Existing output is archived, incomplete stages are retained
+for diagnosis, and source/recipe hashes must remain unchanged through build and
+smoke verification. Checks use a loopback model fixture without provider
+credentials; dependency installation still accesses public npm. The isolated
+smoke process may inherit standard HTTP/HTTPS proxy variables for dependencies,
+but always bypasses proxies for localhost and never inherits provider API keys
+or the real home directory. Reverification:
+
+```sh
+node rivloom/linux/smoke.mjs --source /path/to/clean-core --artifact /path/to/candidate/linux-x64
+```
+
+The desktop repository keeps an exact copy of the four canonical recipe files
+under `scripts/runtime-linux/` and pins their individual SHA256 values in
+`shared/engine-source-linux.json`. The aggregate recipe digest is SHA256 over
+`JSON.stringify` of filename/SHA256 pairs sorted by filename. Upgrade the
+canonical recipe and its copied consumer together; do not silently edit one copy.
+This makes the recipe reviewable before it is committed, while the compiled core
+still comes from a fixed clean commit. It does not promise byte-identical builds.
+
+`Rivloom runtime Linux x64` uses **ubuntu-22.04** and the same native recipe,
+then uploads a `.tar.gz` candidate to preserve executable permissions. It has
+read-only permissions and does not publish a Release or update downloads. The
+workflow becomes available only after these local changes are committed/pushed.
+The current recipe passed all eleven native smoke checks on WSL Ubuntu with
+glibc 2.39. The cloud workflow has not run, and this result does not establish
+acceptance on every older distribution. Record requirements from the main ELF
+and all embedded/extracted native libraries when accepting or upgrading a build.
+
 ## Rivloom prompt scaffold
 
 The [prompt scaffold](../packages/opencode/src/rivloom/prompts/README.md) reserves
@@ -51,24 +139,61 @@ connected to runtime requests and does not change model behavior.
 
 ## CI
 
-`Rivloom runtime Windows` builds on pushes to `codex/runtime-v1` and `rivloom/**`,
-and supports manual runs once installed on the default branch. It uses a standard
-GitHub Windows runner, runs the same isolated tests, and uploads a candidate
-artifact for 30 days. It does not publish a Release or modify desktop downloads.
-Inherited upstream workflows are not the Rivloom build entry point.
+`Rivloom runtime Windows` is configured to build pushes to `dev`,
+`codex/runtime-v1` and branches matching `rivloom/**`, pull requests, and manual
+runs. It uses a standard GitHub Windows runner, requires clean committed inputs,
+runs the same isolated tests, and uploads a candidate artifact for 30 days.
+It does not publish a Release or modify desktop downloads. The policy job checks
+that every inherited upstream job is restricted to the upstream repository;
+only Rivloom build/check jobs may run in this fork, with read-only permissions.
 CI also runs the core/opencode package type checks and upstream configuration,
 TUI configuration, and plugin regression tests. Model responses come from the
 loopback fixture; dependency installation still needs access to public npm.
 
-## Future desktop adoption
+The new policy and upstream-check workflow changes have been prepared locally.
+They take effect after they are committed and pushed; scheduled/manual workflows
+must also be present on the default branch. Local validation is not evidence
+that a GitHub Actions run has completed.
+
+## Follow official updates
+
+```powershell
+node .\rivloom\check-upstream.mjs
+node .\rivloom\check-upstream.mjs --json
+```
+
+The read-only check resolves the official stable release tag to its full commit,
+verifies the pinned tag has not moved, and reports development-branch divergence
+separately. It does not merge, change the pin, or publish anything. The configured
+daily workflow preserves the report and requires attention when a newer stable
+release is available. See [UPSTREAM.md](UPSTREAM.md) for the controlled upgrade,
+regression and rollback procedure.
+
+## Desktop integration
 
 Develop runtime code in this fork; keep the desktop and runtime repositories
-separate. Before switching the desktop, pin a successful committed runtime
-artifact and its SHA256, align the desktop SDK/plugin versions with this baseline,
-and update the desktop engine version guard, binary source, build preparation,
-engine lock/provenance, licenses and CI together. Run the desktop's integration,
-account, installer and update checks before release. Do not overwrite the binary
-in `node_modules` as a substitute for those changes.
+separate. The local Windows desktop integration pins the existing clean `9b07cf4` source,
+builds it with `-RequireClean`, verifies the resulting binary and isolated smoke
+report, and records a consumer-side build receipt. It must not claim that
+newer build tools in this branch are part of that pinned candidate. Committing
+build tools does not change the desktop source lock. A separately reviewed
+Windows desktop pin can adopt the schema 2 producer and its stronger
+artifact/source verification. Linux already uses its separate schema 2 recipe
+with the same fixed core source, as described above.
+
+A source-built EXE is not assumed to be byte-identical between machines. Desktop
+CI must fetch the full pinned commit and build that source, validate the produced
+manifest and smoke results, then record the actual binary SHA256 used in its
+runtime lock/provenance. Importing a prebuilt artifact instead requires its exact
+reviewed SHA256 and matching source identity. Do not substitute a moving latest
+release URL, silently fall back to the official EXE, or overwrite a file under
+`node_modules` as the integration method.
+
+Align the desktop SDK/plugin versions, engine version guard, build preparation,
+engine lock/provenance, licenses and CI together. Run desktop integration,
+account, installer and update checks before release. The public desktop release
+and existing user installations remain unchanged until a separately authorized
+release; current local installer acceptance belongs to the desktop repository.
 
 Smoke verification covers binary identity, HTTP authentication, provider listing,
 session streaming and persistence, controlled tool approval, and cancellation.

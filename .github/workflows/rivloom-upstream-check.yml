@@ -1,0 +1,51 @@
+name: Rivloom upstream check
+
+on:
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rivloom-upstream-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: github.repository == 'rivloom/rivloom-opencode-runtime'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.19.0"
+      - name: Verify reporting and workflow isolation
+        working-directory: rivloom
+        run: node --test tests/check-upstream.test.mjs tests/workflow-policy.test.mjs
+      - name: Check official stable release and development commit
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node rivloom/check-upstream.mjs --output rivloom/dist/upstream-check.json --fail-on-update
+      - name: Summarize available report
+        if: always()
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile, readFile } from 'node:fs/promises'
+          import { formatReport } from './rivloom/check-upstream.mjs'
+          const report = await readFile('rivloom/dist/upstream-check.json', 'utf8').then(JSON.parse).catch(() => null)
+          const text = report ? formatReport(report) : 'The check did not produce a complete report. Inspect the failed step; upstream status is unknown.'
+          await appendFile(process.env.GITHUB_STEP_SUMMARY, `## OpenCode upstream status\n\n\`\`\`text\n${text}\n\`\`\`\n`)
+          NODE
+      - name: Preserve report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rivloom-upstream-${{ github.run_id }}-${{ github.run_attempt }}
+          path: rivloom/dist/upstream-check.json
+          if-no-files-found: ignore
+          retention-days: 30

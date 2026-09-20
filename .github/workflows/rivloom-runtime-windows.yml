@@ -2,7 +2,8 @@ name: Rivloom runtime Windows
 
 on:
   push:
-    branches: [codex/runtime-v1, "rivloom/**"]
+    branches: [dev, codex/runtime-v1, "rivloom/**"]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -13,8 +14,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  policy:
+    if: github.repository == 'rivloom/rivloom-opencode-runtime'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.19.0"
+      - name: Check upstream reporting and workflow isolation
+        working-directory: rivloom
+        run: node --test tests/check-upstream.test.mjs tests/workflow-policy.test.mjs
   windows:
     if: github.repository == 'rivloom/rivloom-opencode-runtime'
+    needs: policy
     runs-on: windows-2025
     timeout-minutes: 40
     steps:
@@ -28,6 +44,9 @@ jobs:
       - name: Build and verify isolated runtime
         shell: pwsh
         run: ./rivloom/build.ps1 -RequireClean
+      - name: Check runtime artifact integrity regressions
+        working-directory: rivloom
+        run: node --test artifact.test.mjs
       - name: Check types and upstream configuration regression tests
         shell: pwsh
         run: |
