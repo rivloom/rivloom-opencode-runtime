@@ -9,22 +9,30 @@ publish a build automatically.
 
 ## Current verified baseline
 
-Checked at **2026-09-19T14:39:41.112Z** against the
+Checked on **2026-09-30** against the
 [official latest release](https://github.com/anomalyco/opencode/releases/latest)
 and [GitHub REST API](https://api.github.com/repos/anomalyco/opencode/releases/latest):
 
 | Input | Verified value |
 | --- | --- |
-| Pinned and latest stable | `v1.18.31` |
-| Stable source commit | `014614d35b397775e5d397a490fc72368c894ec2` |
-| Stable publication time | `2026-09-14T17:47:30Z` |
-| Development head at the time of checking | `fee476bb90043a1012abda156dd9af9e5c71b19d` |
-| Pin compared with that development head | `diverged`: 32 upstream-only, 1 pin-only commits |
+| Pinned and latest stable | `v1.18.33` |
+| Stable source commit | `51ef4be1d3c122f18fefb510dca8d778571f4f18` |
+| Stable publication time | `2026-09-28T04:22:46Z` |
+| Development head at the time of checking | `2fa3363c924c5c3e367b84a87ae478296a0ed59b` |
+| Previous v1.18.31 pin compared with that development head | `diverged`: 105 upstream-only, 1 pin-only commits |
 
 The development branch can diverge from a release commit. These commit counts
 are **not** missed stable releases and do not mean the development branch is a
 validated desktop dependency. Re-run the check to obtain current information;
 the table is a dated observation.
+
+The 1.18.33 candidate includes Codex GPT-6 Sol/Luna support, debug configuration
+credential redaction, Windows/WSL MCP browser-launch error detection, Gemini
+thinking controls, Cloudflare AI Gateway timeouts, Bedrock tool-image
+compatibility and Together streaming usage fixes. The checked-in models.dev
+catalog was refreshed on 2026-09-30 and includes GPT-6 Sol/Luna; its SHA256 is
+pinned in `runtime.json`. Real-provider OAuth and provider calls require their
+own acceptance; isolated fixture tests do not establish those results.
 
 ## Check without changing source
 
