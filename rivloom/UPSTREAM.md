@@ -9,22 +9,52 @@ publish a build automatically.
 
 ## Current verified baseline
 
-Checked at **2026-09-19T14:39:41.112Z** against the
+Checked on **2026-09-30** against the
 [official latest release](https://github.com/anomalyco/opencode/releases/latest)
 and [GitHub REST API](https://api.github.com/repos/anomalyco/opencode/releases/latest):
 
 | Input | Verified value |
 | --- | --- |
-| Pinned and latest stable | `v1.18.31` |
-| Stable source commit | `014614d35b397775e5d397a490fc72368c894ec2` |
-| Stable publication time | `2026-09-14T17:47:30Z` |
-| Development head at the time of checking | `fee476bb90043a1012abda156dd9af9e5c71b19d` |
-| Pin compared with that development head | `diverged`: 32 upstream-only, 1 pin-only commits |
+| Pinned and latest stable | `v1.18.33` |
+| Stable source commit | `51ef4be1d3c122f18fefb510dca8d778571f4f18` |
+| Stable publication time | `2026-09-28T04:22:46Z` |
+| Development head at the time of checking | `2fa3363c924c5c3e367b84a87ae478296a0ed59b` |
+| Previous v1.18.31 pin compared with that development head | `diverged`: 105 upstream-only, 1 pin-only commits |
 
 The development branch can diverge from a release commit. These commit counts
 are **not** missed stable releases and do not mean the development branch is a
 validated desktop dependency. Re-run the check to obtain current information;
 the table is a dated observation.
+
+The 1.18.33 candidate includes Codex GPT-6 Sol/Luna support, debug configuration
+credential redaction, Windows/WSL MCP browser-launch error detection, Gemini
+thinking controls, Cloudflare AI Gateway timeouts, Bedrock tool-image
+compatibility and Together streaming usage fixes. The checked-in models.dev
+catalog was refreshed on 2026-09-30 and includes GPT-6 Sol/Luna; its SHA256 is
+pinned in `runtime.json`. Real-provider OAuth and provider calls require their
+own acceptance; isolated fixture tests do not establish those results.
+
+The adopted desktop development core is
+`655285f835f8560dcf3b6c484d0e2f1faba9e67d`, tree
+`9bbec9cc7eb7062cb7bda8d3e8a4ad6b1c428351`. Linux uses the separate recipe
+commit `0649e56a563e82dfe0e9a0e5e860f14422f62d24` to compile that same core;
+subsequent recipe or documentation commits do not change the core pin.
+Windows and native Linux producers each passed eleven checks; the desktop
+Windows consumer passed ten engine checks. The Linux consumer imported the
+schema 2 artifact and verified its source lock and build receipt, and all
+29 native Linux desktop tests passed. Core/opencode types and 904
+runtime regression checks passed, followed by thirteen checks for the updated
+Linux recipe and workflow isolation. This is local source/build/consumer acceptance,
+not a GitHub Actions, installer, update or real-provider acceptance result.
+
+The exact v1.18.31-to-v1.18.33 tree comparison contains no HTTP server source,
+generated SDK code, protocol schema or database migration change. SDK/plugin
+package versions were updated together. Rivloom's plugin-version patch,
+inert prompt scaffold and workflow guards remain present.
+
+Published **Rivloom 0.1.29** keeps its original
+`1.18.31-rivloom.9b07cf442a7e` runtime and SDK/plugin `1.18.31`. Updating the
+development source does not rewrite that release or its verification history.
 
 ## Check without changing source
 
@@ -33,7 +63,7 @@ From the repository root, with Node.js 24.19.0:
 ```powershell
 node rivloom/check-upstream.mjs
 node rivloom/check-upstream.mjs --json
-node rivloom/check-upstream.mjs --output rivloom/dist/upstream-check-20260919.json --fail-on-update
+node rivloom/check-upstream.mjs --output rivloom/dist/upstream-check-20260930.json --fail-on-update
 ```
 
 The script reads `rivloom/runtime.json`, makes GET requests to official GitHub
@@ -116,8 +146,9 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File rivloom/build.ps1 -RequireClean
 ```
 
 The Windows build job additionally checks `packages/core` and
-`packages/opencode` types and upstream configuration, TUI configuration and
-plugin tests. The real EXE smoke test checks version identity, authenticated HTTP
+`packages/opencode` types and upstream configuration, TUI configuration, plugin,
+npm resolution, browser/MCP OAuth, provider timeout/transform and message
+attachment tests. The real EXE smoke test checks version identity, authenticated HTTP
 health/provider APIs, session creation/streaming/persistence, tool approval and
 cancellation against an isolated local model fixture. These checks do not call a
 paid model or validate real-provider OAuth.
@@ -131,13 +162,19 @@ the main ELF and every embedded or extracted native library. A main-executable
 `readelf` result alone is insufficient: the current candidate's main ELF requires
 symbols through `GLIBC_2.17`, but embedded `libfff_c.so` from
 `@ff-labs/fff-bin-linux-x64-gnu` requires `GLIBC_2.30`, making **glibc 2.30** the
-runtime floor. The embedded watcher requires `GLIBCXX_3.4.22`; the full Linux
-client's bundled Node raises that to `GLIBCXX_3.4.25` and requires kernel 4.18.
+runtime floor. The embedded watcher requires `GLIBCXX_3.4.22`; embedded
+`librust_pty.so` and `libopentui.so` require `GLIBC_2.17`. The 1.18.33 review
+identified all four embedded native ELFs and every runtime-extracted ELF.
+The highest measured symbols across that candidate and bundled Node are
+`GLIBC_2.30`, `GLIBCXX_3.4.22` and `CXXABI_1.3.11`. The full Linux client
+retains Node's official platform support minimum of `GLIBCXX_3.4.25` and
+kernel 4.18, separately from those measured symbol references.
 An upstream dependency change must trigger the same embedded-library ABI review,
 even when the main ELF's requirements are unchanged.
 Windows-only checks and successful cross-compilation are not Linux execution
-evidence. The current recipe passed eleven native smoke checks on WSL Ubuntu
-with glibc 2.39; no cloud workflow run is claimed. This identifies the tested
+evidence. The 1.18.33 core and separately pinned recipe passed eleven native
+smoke checks on WSL Ubuntu with glibc 2.39; no cloud workflow run is claimed.
+This identifies the tested
 distribution and does not alone establish acceptance on the oldest supported
 distribution.
 

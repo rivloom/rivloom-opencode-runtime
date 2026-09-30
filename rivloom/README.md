@@ -1,12 +1,11 @@
 # Rivloom OpenCode runtime
 
-This fork's Windows build profile starts at upstream **v1.18.31**, commit
-`014614d35b397775e5d397a490fc72368c894ec2`. Rivloom desktop's local Windows
-integration uses a source build of this fork in place of the official **1.18.25**
-executable, pinned to committed source
-`9b07cf442a7eba60a6fe690f630251d23d24194a`. Building this repository does not
-install or release the desktop application. See [desktop integration](#desktop-integration)
-for the distinction between that pinned candidate and the newer build tools.
+This fork's build profiles track upstream **v1.18.33**, commit
+`51ef4be1d3c122f18fefb510dca8d778571f4f18`. Rivloom desktop consumes a clean
+committed source build of this fork, with its own exact source and artifact
+locks. Building this repository does not install or release the desktop
+application. See [desktop integration](#desktop-integration) for the separate
+consumer acceptance requirements.
 
 ## Windows build and verification
 
@@ -28,8 +27,8 @@ Output: `rivloom/dist/windows-x64/opencode.exe`, `runtime-manifest.json`,
 `source-files.json`, `SHA256SUMS`, `smoke-report.json`, this README, and the
 upstream license. The source inventory and artifact hashes in the schema 2
 manifest bind the build to its inputs; the smoke report also binds to the
-manifest. This profile writes schema 2; the older pinned `9b07cf4` Windows
-profile writes schema 1 and has no source inventory.
+manifest. This profile writes schema 2. The previous `9b07cf4` Windows candidate
+used schema 1 and has no source inventory; keep its verified artifact for rollback.
 Re-run verification:
 
 ```powershell
@@ -43,7 +42,7 @@ preserved before rebuilding, stale smoke success is invalidated, source inputs
 must remain unchanged during compilation, and cached Bun archives/executables
 are reverified before use.
 
-Version strings include the source commit: `1.18.31-rivloom.<commit>`. Uncommitted
+Version strings include the source commit: `1.18.33-rivloom.<commit>`. Uncommitted
 builds have an additional `.dirty` suffix. Generated binaries are unsigned.
 The upstream browser UI is omitted because Rivloom provides its own UI. The
 terminal CLI and HTTP server remain present. This profile targets normal x64
@@ -56,7 +55,7 @@ The build is traceable; byte-for-byte reproducibility is not assumed.
 
 One build compatibility patch separates the binary version from its npm plugin
 dependency: the EXE keeps the Rivloom commit suffix, while automatic plugin
-installation uses the source package's published version (currently 1.18.31).
+installation uses the source package's published version (currently 1.18.33).
 Both HTTP configuration and TUI configuration use this value. No model, session
 or tool execution behavior is patched.
 
@@ -67,17 +66,22 @@ glibc**, with no embedded web UI. ARM64 and musl are not candidates in this
 profile. Linux support is implemented by the four self-contained files in
 [`linux/`](linux/), independently from the existing Windows recipe.
 
-The current Linux runtime requires **glibc 2.30 or newer**. The main ELF's
-highest required symbol is `GLIBC_2.17`, but its embedded
+The verified 1.18.33 Linux runtime requires **glibc 2.30 or newer**. The main
+ELF's highest required symbol is `GLIBC_2.17`, but its embedded
 `@ff-labs/fff-bin-linux-x64-gnu/libfff_c.so`, which the smoke run actually
-extracts, requires `GLIBC_2.30`. The embedded watcher also requires symbols
-through `GLIBCXX_3.4.22`. Inspecting only `opencode` with `readelf` therefore
-understates the runtime requirements. The complete Linux client adds its own
-bundled Node requirements: `GLIBCXX_3.4.25` and Linux kernel 4.18 or newer.
+extracts, requires `GLIBC_2.30`. The embedded watcher requires
+`GLIBCXX_3.4.22`; `librust_pty.so` and `libopentui.so` require `GLIBC_2.17`.
+The ABI review identified all four embedded native ELFs and every
+runtime-extracted ELF. Inspecting only `opencode` with `readelf` therefore
+understates the runtime requirements. Across the exact candidate and bundled
+Node, the highest measured requirements are `GLIBC_2.30`, `GLIBCXX_3.4.22`
+and `CXXABI_1.3.11`. The complete Linux client retains Node's official support
+minimum of `GLIBCXX_3.4.25` and Linux kernel 4.18 or newer, separately from
+the measured symbol references.
 
 The external recipe deliberately compiles a separate clean checkout of the
-same fixed `9b07cf442a7eba60a6fe690f630251d23d24194a` core source. The recipe
-does not need to exist in that old commit. The schema 2 manifest records the
+fixed core source in `linux/runtime.json`. The recipe is committed separately
+after the core source identity is known. The schema 2 manifest records the
 core source inventory and the separate recipe file hashes; it never claims
 that newer build scripts were part of the pinned core commit.
 
@@ -86,7 +90,7 @@ and a C/C++ compiler toolchain (including libc development headers), then:
 
 ```sh
 git clone --no-checkout https://github.com/rivloom/rivloom-opencode-runtime.git /path/to/clean-core
-git -C /path/to/clean-core checkout --detach 9b07cf442a7eba60a6fe690f630251d23d24194a
+git -C /path/to/clean-core checkout --detach "$(node -p 'JSON.parse(require("fs").readFileSync("rivloom/linux/runtime.json", "utf8")).source.commit')"
 node rivloom/linux/build.mjs --source /path/to/clean-core --output /path/to/candidate/linux-x64 --require-clean
 ```
 
@@ -126,10 +130,11 @@ still comes from a fixed clean commit. It does not promise byte-identical builds
 then uploads a `.tar.gz` candidate to preserve executable permissions. It has
 read-only permissions and does not publish a Release or update downloads. The
 workflow becomes available only after these local changes are committed/pushed.
-The current recipe passed all eleven native smoke checks on WSL Ubuntu with
-glibc 2.39. The cloud workflow has not run, and this result does not establish
-acceptance on every older distribution. Record requirements from the main ELF
-and all embedded/extracted native libraries when accepting or upgrading a build.
+The 1.18.33 candidate passed all eleven native smoke checks on WSL Ubuntu
+with glibc 2.39, and its main, embedded and extracted native libraries received
+the ABI review above. The cloud workflow has not run, and this local result
+does not establish execution acceptance on every older distribution or CPU.
+Repeat the native build, smoke and embedded-library ABI review for a new core pin.
 
 ## Rivloom prompt scaffold
 
@@ -147,13 +152,13 @@ It does not publish a Release or modify desktop downloads. The policy job checks
 that every inherited upstream job is restricted to the upstream repository;
 only Rivloom build/check jobs may run in this fork, with read-only permissions.
 CI also runs the core/opencode package type checks and upstream configuration,
-TUI configuration, and plugin regression tests. Model responses come from the
-loopback fixture; dependency installation still needs access to public npm.
+TUI configuration, plugin, npm resolution, browser, MCP OAuth, timeout,
+provider-transform and message-attachment regression tests. Model responses
+come from the loopback fixture; dependency installation still needs access to
+public npm.
 
-The new policy and upstream-check workflow changes have been prepared locally.
-They take effect after they are committed and pushed; scheduled/manual workflows
-must also be present on the default branch. Local validation is not evidence
-that a GitHub Actions run has completed.
+Scheduled/manual workflows must be present on the default branch. Local
+validation is not evidence that a GitHub Actions run has completed.
 
 ## Follow official updates
 
@@ -172,14 +177,37 @@ regression and rollback procedure.
 ## Desktop integration
 
 Develop runtime code in this fork; keep the desktop and runtime repositories
-separate. The local Windows desktop integration pins the existing clean `9b07cf4` source,
-builds it with `-RequireClean`, verifies the resulting binary and isolated smoke
-report, and records a consumer-side build receipt. It must not claim that
-newer build tools in this branch are part of that pinned candidate. Committing
-build tools does not change the desktop source lock. A separately reviewed
-Windows desktop pin can adopt the schema 2 producer and its stronger
-artifact/source verification. Linux already uses its separate schema 2 recipe
-with the same fixed core source, as described above.
+separate. Both desktop profiles pin an exact clean core commit and build or
+import a verified candidate, validate the manifest and isolated smoke report,
+and record a consumer-side build receipt. The Windows producer writes schema 2;
+the Linux producer also binds the separately pinned recipe. Committing runtime
+build tools does not change the desktop source lock. Upgrade that lock and its
+coupled SDK/plugin/provenance inputs after reviewing the candidate.
+
+The desktop development source adopted **1.18.33** on **2026-09-30**:
+
+| Input | Adopted identity |
+| --- | --- |
+| Runtime core commit | `655285f835f8560dcf3b6c484d0e2f1faba9e67d` |
+| Runtime core tree | `9bbec9cc7eb7062cb7bda8d3e8a4ad6b1c428351` |
+| Linux recipe commit | `0649e56a563e82dfe0e9a0e5e860f14422f62d24` |
+| Binary version | `1.18.33-rivloom.655285f835f8` |
+| SDK and plugin versions | `1.18.33` |
+
+The Windows producer passed eleven real-EXE smoke checks, and the desktop's
+Windows consumer passed ten engine smoke checks against the same fixed core.
+The Linux producer passed eleven native checks with the separate recipe above.
+The desktop Linux consumer imported that schema 2 artifact and verified its
+source lock and build receipt; all 29 native Linux desktop tests passed.
+These checks use isolated local model fixtures. Runtime type checks and the
+904 Rivloom/core/configuration/provider regression checks passed; the updated
+Linux recipe and workflow policy also passed thirteen targeted checks.
+
+The published **Rivloom 0.1.29** remains bound to
+`1.18.31-rivloom.9b07cf442a7e` and SDK/plugin `1.18.31`. The development pin
+does not change that release's artifacts, download information, signature or
+historical acceptance record. New desktop packaging, installation, updates
+and real-provider OAuth require their own acceptance before a later release.
 
 A source-built EXE is not assumed to be byte-identical between machines. Desktop
 CI must fetch the full pinned commit and build that source, validate the produced

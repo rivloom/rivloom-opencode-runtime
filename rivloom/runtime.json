@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "upstream": {
     "repository": "anomalyco/opencode",
-    "tag": "v1.18.31",
-    "commit": "014614d35b397775e5d397a490fc72368c894ec2",
-    "version": "1.18.31"
+    "tag": "v1.18.33",
+    "commit": "51ef4be1d3c122f18fefb510dca8d778571f4f18",
+    "version": "1.18.33"
   },
   "nodeVersion": "24.19.0",
   "bun": {
@@ -15,8 +15,8 @@
   "models": {
     "file": "rivloom/models.json",
     "source": "https://models.dev/api.json",
-    "retrievedOn": "2026-09-16",
-    "sha256": "22733fa7b4faff49d6658dd1a1c575c78d2e16730bb3f68101c800422d4991f0"
+    "retrievedOn": "2026-09-30",
+    "sha256": "58e29fa343539c2ba27f364eb98314b962f16afab4d5c5afbb5401ff901d954b"
   },
   "target": "windows-x64",
   "channel": "rivloom",
