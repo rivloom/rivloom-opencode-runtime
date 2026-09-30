@@ -40,9 +40,11 @@ The adopted desktop development core is
 commit `0649e56a563e82dfe0e9a0e5e860f14422f62d24` to compile that same core;
 subsequent recipe or documentation commits do not change the core pin.
 Windows and native Linux producers each passed eleven checks; the desktop
-Windows consumer passed ten engine checks. Core/opencode types and 904
+Windows consumer passed ten engine checks. The Linux consumer imported the
+schema 2 artifact and verified its source lock and build receipt, and all
+29 native Linux desktop tests passed. Core/opencode types and 904
 runtime regression checks passed, followed by thirteen checks for the updated
-Linux recipe and workflow isolation. This is local source/build acceptance,
+Linux recipe and workflow isolation. This is local source/build/consumer acceptance,
 not a GitHub Actions, installer, update or real-provider acceptance result.
 
 The exact v1.18.31-to-v1.18.33 tree comparison contains no HTTP server source,

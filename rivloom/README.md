@@ -197,6 +197,8 @@ The desktop development source adopted **1.18.33** on **2026-09-30**:
 The Windows producer passed eleven real-EXE smoke checks, and the desktop's
 Windows consumer passed ten engine smoke checks against the same fixed core.
 The Linux producer passed eleven native checks with the separate recipe above.
+The desktop Linux consumer imported that schema 2 artifact and verified its
+source lock and build receipt; all 29 native Linux desktop tests passed.
 These checks use isolated local model fixtures. Runtime type checks and the
 904 Rivloom/core/configuration/provider regression checks passed; the updated
 Linux recipe and workflow policy also passed thirteen targeted checks.
