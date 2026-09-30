@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: rivloom/rivloom-opencode-runtime
-          ref: 9b07cf442a7eba60a6fe690f630251d23d24194a
+          ref: 655285f835f8560dcf3b6c484d0e2f1faba9e67d
           fetch-depth: 0
           persist-credentials: false
           path: rivloom/dist/linux-core
